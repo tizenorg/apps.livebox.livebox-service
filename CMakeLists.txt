@@ -35,7 +35,7 @@ SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} -fvisibility=hidden -Wall -Werror -Winline -g"
 SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS}")
 
 ADD_DEFINITIONS("-DPREFIX=\"${PREFIX}\"")
-ADD_DEFINITIONS("-DLOG_TAG=\"${PROJECT_NAME}\"")
+ADD_DEFINITIONS("-DLOG_TAG=\"LIVEBOX_SERVICE\"")
 ADD_DEFINITIONS("-DNDEBUG")
 ADD_DEFINITIONS("-DMASTER_PKGNAME=\"org.tizen.data-provider-master\"")
 ADD_DEFINITIONS("-DINFO_SOCKET=\"/opt/usr/share/live_magazine/.live.socket\"")
