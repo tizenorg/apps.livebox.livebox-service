@@ -38,10 +38,6 @@ SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS}")
 ADD_DEFINITIONS("-DPREFIX=\"${PREFIX}\"")
 ADD_DEFINITIONS("-DLOG_TAG=\"LIVEBOX_SERVICE\"")
 ADD_DEFINITIONS("-DNDEBUG")
-ADD_DEFINITIONS("-DMASTER_PKGNAME=\"org.tizen.data-provider-master\"")
-ADD_DEFINITIONS("-DINFO_SOCKET=\"/opt/usr/share/live_magazine/.live.socket\"")
-ADD_DEFINITIONS("-DCLIENT_SOCKET=\"/opt/usr/share/live_magazine/.client.socket\"")
-ADD_DEFINITIONS("-DSLAVE_SOCKET=\"/opt/usr/share/live_magazine/.slave.socket\"")
 ADD_DEFINITIONS("-DSERVICE_SOCKET=\"/opt/usr/share/live_magazine/.service.socket\"")
 
 ADD_LIBRARY(${PROJECT_NAME} SHARED
