@@ -1,8 +1,8 @@
 Name: liblivebox-service
 Summary: Service API for gathering installed livebox information.
-Version: 0.3.10
+Version: 0.3.12
 Release: 1
-Group: framework/livebox
+Group: HomeTF/Livebox
 License: Flora License
 Source0: %{name}-%{version}.tar.gz
 BuildRequires: cmake, gettext-tools, coreutils
@@ -51,6 +51,7 @@ mkdir -p %{buildroot}/%{_datarootdir}/license
 %files devel
 %defattr(-,root,root,-)
 %{_includedir}/livebox-service/livebox-service.h
+%{_includedir}/livebox-service/livebox-errno.h
 %{_datarootdir}/doc/livebox-service/livebox-service_PG.h
 %{_libdir}/pkgconfig/*.pc
 
