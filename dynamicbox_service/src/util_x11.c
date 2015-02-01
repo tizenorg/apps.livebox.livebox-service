@@ -1,18 +1,35 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
+#include <unistd.h> // access
+#include <stdlib.h> // free
+
+#include <X11/X.h>
+#include <X11/Xlib.h>
 
 #include <dlog.h>
 
 #include <sqlite3.h>
 #include <unicode/uloc.h>
 
-#include "livebox-errno.h"
+#include "dynamicbox_errno.h"
 #include "util.h"
-#include "livebox-service.h"
+#include "dynamicbox_service.h"
 #include "debug.h"
 
+#define CONF_PATH_FORMAT "/usr/share/data-provider-master/%dx%d/resolution.ini"
+
 int errno;
+
+static struct {
+	unsigned int w;
+	unsigned int h;
+	int res_resolved;
+} s_info = {
+	.w = 0,
+	.h = 0,
+	.res_resolved = 0,
+};
 
 static int update_info(struct supported_size_list *SIZE_LIST, int width_type, int height_type, int width, int height)
 {
@@ -79,7 +96,7 @@ static inline int update_from_file(struct service_info *info, struct supported_s
 	fp = fopen(info->conf_file, "r");
 	if (!fp) {
 		ErrPrint("Open failed: %s\n", strerror(errno));
-		return LB_STATUS_ERROR_IO;
+		return DBOX_STATUS_ERROR_IO_ERROR;
 	}
 
 	updated = 0;
@@ -161,9 +178,17 @@ static inline int update_from_file(struct service_info *info, struct supported_s
 				status = EOL;
 
 				if (sscanf(buffer, "%dx%d", &width, &height) != 2) {
-					ErrPrint("Invalid syntax: [%s]\n", buffer);
-					status = ERROR;
-				} else if (ch == EOF) {
+					if (!strncasecmp(buffer, "screen", strlen("screen"))) {
+						width = s_info.w;
+						height = s_info.h;
+						DbgPrint("Select screen size: %dx%d\n", width, height);
+					} else {
+						ErrPrint("Invalid syntax: [%s]\n", buffer);
+						status = ERROR;
+					}
+				}
+
+				if (status != ERROR && ch == EOF) {
 					if (info->base_parse) {
 						info->base_w = width;
 						info->base_h = height;
@@ -180,7 +205,7 @@ static inline int update_from_file(struct service_info *info, struct supported_s
 				updated += update_info(SIZE_LIST, width_type, height_type, width, height);
 			} else {
 				info->base_w = width;
-				info->base_h =  height;
+				info->base_h = height;
 			}
 			status = START;
 			ungetc(ch, fp);
@@ -205,28 +230,126 @@ static inline int update_from_file(struct service_info *info, struct supported_s
 		ErrPrint("fclose: %s\n", strerror(errno));
 	}
 
-	return NR_OF_SIZE_LIST - updated;
+	return DBOX_NR_OF_SIZE_LIST - updated;
+}
+
+/*
+ * Find proper configuration and install(link) it to conf path.
+ */
+static char *conf_path(void)
+{
+	char *path;
+	int length;
+
+	length = strlen(CONF_PATH_FORMAT) + 12;    // 12 == RESERVED SPACE
+	path = calloc(1, length);
+	if (!path) {
+		ErrPrint("calloc: %s\n", strerror(errno));
+		return NULL;
+	}
+
+	if (s_info.w == 0 || s_info.h == 0) {
+		/* Try to update resolution first if it is not initialized */
+		util_screen_size_get(NULL, NULL);
+	}
+
+	snprintf(path, length, CONF_PATH_FORMAT, s_info.w, s_info.h);
+	DbgPrint("Selected conf file: %s\n", path);
+	if (access(path, F_OK) != 0) {
+		ErrPrint("Fallback to default, access: %s\n", strerror(errno));
+		strncpy(path, RESOLUTION_FILE, length);
+		if (access(path, F_OK) != 0) {
+			ErrPrint("Serious error - there is no conf file, use default setting: %s\n", strerror(errno));
+			free(path);
+			path = NULL;
+		}
+	}
+
+	return path;
+}
+
+int util_screen_size_get(unsigned int *width, unsigned int *height)
+{
+	Display *disp;
+	Window root;
+	Window dummy;
+	unsigned int border;
+	unsigned int depth;
+	int x;
+	int y;
+	int ret;
+	unsigned int _width;    
+	unsigned int _height;
+
+	if (!width) {
+		width = &_width;
+	}
+
+	if (!height) {
+		height = &_height;
+	}
+
+	if (s_info.w != 0 && s_info.h != 0) {
+		DbgPrint("Already prepared (%dx%d)\n", s_info.w, s_info.h);
+		goto out;
+	}
+
+	disp = XOpenDisplay(NULL);
+	if (!disp) {
+		ErrPrint("Failed to open a display\n");
+		return DBOX_STATUS_ERROR_FAULT;
+	}
+
+	root = XDefaultRootWindow(disp);
+	ret = XGetGeometry(disp, root, &dummy, &x, &y, &s_info.w, &s_info.h, &border, &depth);
+	XCloseDisplay(disp);
+	if (!ret) {
+		ErrPrint("Failed to get geometry\n");
+		return DBOX_STATUS_ERROR_FAULT;
+	}
+
+out:
+	*width = s_info.w;
+	*height = s_info.h;
+	return DBOX_STATUS_ERROR_NONE;
 }
 
 int util_update_resolution(struct service_info *info, struct supported_size_list *SIZE_LIST)
 {
-	unsigned int width;
-	unsigned int height;
-	unsigned int border;
-	unsigned int depth;
-	register int i;
-	static int res_resolved = 0;
-
-	if (res_resolved) {
-		return LB_STATUS_SUCCESS;
+	if (s_info.res_resolved) {
+		return DBOX_STATUS_ERROR_NONE;
 	}
 
-	if (update_from_file(info, SIZE_LIST) == 0) {
-		DbgPrint("Resolution info is all updated by file\n");
+	if (!info->conf_file) {
+		info->conf_file = conf_path();
 	}
 
-	res_resolved = 1;
-	return LB_STATUS_SUCCESS;
+	if (info->conf_file) {
+		register int i;
+		unsigned int width;
+		unsigned int height;
+
+		i = util_screen_size_get(&width, &height);
+		if (i != DBOX_STATUS_ERROR_NONE) {
+			return i;
+		}
+
+		if (update_from_file(info, SIZE_LIST) == 0) {
+			DbgPrint("Resolution info is all updated by file\n");
+		}
+
+		if (width != info->base_w) {
+			for (i = 0; i < DBOX_NR_OF_SIZE_LIST; i++) {
+				SIZE_LIST[i].w = (unsigned int)((double)SIZE_LIST[i].w * (double)width / (double)info->base_w);
+				SIZE_LIST[i].h = (unsigned int)((double)SIZE_LIST[i].h * (double)width / (double)info->base_w);
+			}
+		}
+	} else {
+		DbgPrint("Conf file is not loaded\n");
+	}
+
+	s_info.res_resolved = 1;
+	return DBOX_STATUS_ERROR_NONE;
 }
 
 /* End of a file */
